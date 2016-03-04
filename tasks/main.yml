@@ -1,0 +1,159 @@
+- include: rbenv.yml
+- include: nodenv.yml
+- name: add deb.packer.io key to apt
+  apt_key:
+    url=https://deb.packager.io/key
+    state=present
+- name: add deb.packer.io openproject repository to apt
+  apt_repository:
+    repo="deb https://deb.packager.io/gh/opf/openproject-ce trusty stable/5"
+      state=present
+      update_cache=yes
+- name: install openproject
+  apt: name=openproject=5.0.15-1455820229.697964e.trusty update_cache=yes state=present
+#- name: install the MySQL packages
+# apt: pkg={{ item }} state=installed update_cache=yes
+# with_items:
+#   - mysql-server
+#   - python-mysqldb
+#   - libmysqlclient-dev
+#- name: copy database dump to server
+#  copy:
+#   src=templates/openproject.sql
+#   dest=/tmp
+#- name: ensure openproject db exists
+#  mysql_db:
+#   name=openproject
+#   state=present
+- name: Start the MySQL service
+  service: name=mysql state=started enabled=true
+- name: create database
+  mysql_db:
+    name=openproject
+    state=present
+    login_user=root
+    login_password="{{mysqlRootPassword}}"
+- name: create database user
+  become: yes
+  mysql_user:
+    name=openproject
+    password="my_password"
+    login_user=root
+    login_password="{{mysqlRootPassword}}"
+    priv=openproject.*:ALL
+    check_implicit_admin=yes
+    state=present
+  with_items:
+    - "{{ ansible_hostname }}"
+    - 127.0.0.1
+    - ::1
+    - localhost
+#  mysql_user:
+#    user=openproject
+#    password=my_password
+#    login_user=root
+#    login_password="{{mysqlRootPassword}}"
+#    priv=openproject.*:ALL
+#    state=present
+#- name: import database from dump
+#  mysql_db:
+#    name=openproject
+#    state=import
+#    login_user=openproject
+#    login_password=my_password
+#    target=/tmp/openproject.sql
+- name: install memcached
+  apt: name=memcached=1.4.14-0ubuntu9 state=installed update_cache=yes
+- name: install Bundler
+  command: bash -lc "gem install rubygems-update && update_rubygems && gem install bundler"
+  remote_user: openproject
+- name: set openproject dir permissions
+  file: dest=/opt/openproject/vendor/bundle/bin
+    state=directory
+    owner=vagrant
+    mode=0775
+    recurse=yes
+- name: set openproject .bundle permissions
+  file: dest=/opt/openproject/.bundle
+    state=directory
+    owner=vagrant
+    mode=0776
+    recurse=yes
+- name: set gemfile permissions
+  file: dest={{ item }}
+    state=file
+    owner=vagrant
+    mode=0776
+  with_items:
+    - /opt/openproject/Gemfile.lock
+    - /opt/openproject/Gemfile
+    - /opt/openproject/Gemfile.local
+    - /opt/openproject/Gemfile.plugins
+- name: installs gems using a Gemfile
+  become: false
+  command: bash -lc "bundle install --deployment --without postgres sqlite development test therubyracer docker"
+  args:
+    chdir: /opt/openproject
+- name: Install npm packages for openproject
+  command: bash -lc "npm install"
+  remote_user: openproject
+  args:
+    chdir: /opt/openproject
+- name: copy database config to server
+  copy:
+    mode=776
+    src=templates/database.yml
+    dest=/opt/openproject/config/database.yml
+- name: rake database
+  remote_user: openproject
+  command: bash -lc 'RAILS_ENV="production" ./bin/rake db:create && RAILS_ENV="production" ./bin/rake db:migrate && RAILS_ENV="production" ./bin/rake db:seed && RAILS_ENV="production" ./bin/rake assets:precompile'
+  args:
+    chdir: /opt/openproject
+- name: rake secret
+  remote_user: openproject
+  command: bash -lc 'echo export SECRET_KEY_BASE="`./bin/rake secret`" >> /home/openproject/.profile && source /home/openproject/.profile'
+  args:
+    chdir: /opt/openproject
+- name: install passenger 5.0.25
+  command: bash -lc "gem install passenger -v 5.0.25"
+  remote_user: openproject
+  args:
+    chdir: /opt/openproject
+- name: install the apache(threaded,APR,APU) dev header packages required by passenger apache2 mod
+  apt: name={{ item.name }}={{ item.version}} state=installed update_cache=yes
+  with_items:
+    - { name: "apache2-dev", version: "2.4.7-1ubuntu4.9"}
+    - { name: "libapr1-dev", version: "1.5.0-1"}
+    - { name: "libaprutil1-dev", version: "1.5.3-1"}
+- name: setup passenger
+  command: bash -lc 'passenger-install-apache2-module --auto'
+  remote_user: openproject
+  args:
+    chdir: /opt/openproject
+- name: passenger mod in apache
+  remote_user: openproject
+  command: bash -lc 'echo {{item.src}} > {{item.dst}}'
+  with_items:
+    - {src: 'LoadModule passenger_module /usr/local/rbenv/versions/2.1.6/lib/ruby/gems/2.1.0/gems/passenger-5.0.25/buildout/apache2/mod_passenger.so', dst: '/etc/apache2/mods-available/passenger.load'}
+  args:
+    chdir: /opt/openproject
+- name: copy apache site config to server
+  copy:
+    mode=775
+    src=templates/passenger.conf
+    dest=/etc/apache2/mods-available/passenger.conf
+- name: enable passenger module
+  command: bash -lc 'a2enmod passenger'
+  remote_user: openproject
+  args:
+    chdir: /opt/openproject
+- name: copy apache site config to server
+  copy:
+    mode=775
+    src=templates/openproject.conf.apache
+    dest=/etc/apache2/sites-available/openproject.conf
+- name: enable site
+  command: bash -lc 'a2dissite 000-default && a2ensite openproject && service apache2 restart'
+  remote_user: openproject
+  args:
+    chdir: /opt/openproject

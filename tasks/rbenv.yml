@@ -1,0 +1,87 @@
+#Updated with essentials for rbenv and openproject
+
+- name: install build depends
+  apt: name={{ item.name }}={{ item.version }} state=present install_recommends=no update_cache=yes
+  with_items:
+    - {name: "git", version: "1:1.9.1-1ubuntu0.2"}
+    - {name: "curl", version: "7.35.0-1ubuntu2.6"}
+    - {name: "build-essential", version: "11.6ubuntu6"}
+    - {name: "libcurl4-openssl-dev", version: "7.35.0-1ubuntu2.6"}
+    - {name: "libffi-dev", version: "3.1~rc1+r3.0.13-12ubuntu0.1"}
+    - {name: "libreadline-dev", version: "6.3-4ubuntu2"}
+    - {name: "libssl-dev", version: "1.0.1f-1ubuntu2.18"}
+    - {name: "libxml2-dev", version: "2.9.1+dfsg1-3ubuntu4.7"}
+    - {name: "libxslt1-dev", version: "1.1.28-2build1"}
+    - {name: "zlib1g-dev", version: "1:1.2.8.dfsg-1ubuntu1"}
+    - {name: "libyaml-dev", version: "0.1.4-3ubuntu3.1"}
+    - {name: "libgdbm-dev", version: "1.8.3-12build1"}
+    - {name: "libncurses5-dev", version: "5.9+20140118-1ubuntu1"}
+    - {name: "automake", version: "1:1.14.1-2ubuntu1"}
+    - {name: "imagemagick", version: "8:6.7.7.10-6ubuntu3"}
+    - {name: "libmagickcore-dev", version: "8:6.7.7.10-6ubuntu3"}
+    - {name: "libmagickwand-dev", version: "8:6.7.7.10-6ubuntu3"}
+    - {name: "libtool", version: "2.4.2-1.7ubuntu1"}
+    - {name: "bison", version: "2:3.0.2.dfsg-2"}
+    - {name: "libxml2", version: "2.9.1+dfsg1-3ubuntu4.7"}
+
+- name: checkout rbenv_repo for system
+  git: >
+    repo={{ rbenv_repo }}
+    dest={{ rbenv_root }}
+    version={{ rbenv.version }}
+    accept_hostkey=true
+    force=yes
+  tags:
+    - rbenv
+
+- name: create plugins directory for system
+  file: state=directory path={{ rbenv_root }}/plugins
+  tags:
+    - rbenv
+
+- name: install plugins for system
+  git: >
+    repo={{ item.repo }}
+    dest={{ rbenv_root }}/plugins/{{ item.name }}
+    version={{ item.version }}
+    accept_hostkey=true
+    force=yes
+  with_items: rbenv_plugins
+  tags:
+    - rbenv
+
+- name: add rbenv initialization to profile system-wide
+  template: src=rbenv.sh.j2 dest=/etc/profile.d/rbenv.sh owner=root group=root mode=0755
+  tags:
+    - rbenv
+
+- name: check ruby {{ rbenv.ruby_version }} installed for system
+  shell: $SHELL -lc "rbenv versions | grep {{ rbenv.ruby_version }}"
+  register: ruby_installed
+  changed_when: false
+  ignore_errors: yes
+  always_run: yes
+  tags:
+    - rbenv
+- name: install ruby {{ rbenv.ruby_version }} for system
+  shell: bash -lc "export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt && rbenv install {{ rbenv.ruby_version }}"
+  when:
+    - ruby_installed.rc != 0
+  tags:
+    - rbenv
+
+- name: check if current system ruby version is {{ rbenv.ruby_version }}
+  shell: $SHELL -lc "rbenv version | cut -d ' ' -f 1 | grep -Fx '{{ rbenv.ruby_version }}'"
+  register: ruby_selected
+  changed_when: false
+  ignore_errors: yes
+  always_run: yes
+  tags:
+    - rbenv
+
+- name: set ruby {{ rbenv.ruby_version }} for system
+  shell: bash -lc "rbenv global {{ rbenv.ruby_version }} && rbenv rehash"
+  when:
+    - ruby_selected.rc != 0
+  tags:
+    - rbenv

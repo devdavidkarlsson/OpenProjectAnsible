@@ -1,0 +1,37 @@
+- name: install nodenv from source
+  git: repo=https://github.com/nodenv/nodenv
+    dest=/opt/nodenv
+    update={{ update_nodenv }}
+    version=v1.0.0
+- name: install node-build from source - Ubuntu
+  git: repo=https://github.com/nodenv/node-build.git
+    dest=/opt/nodenv/plugins/node-build
+    update={{ update_nodenv }}
+    version=v2.2.1
+- name: install nodejs deps
+  apt: name={{ item.name }}={{ item.version }} update_cache=yes state=present
+  with_items:
+    - {name: "git", version: "1:1.9.1-1ubuntu0.2"}
+    - {name: "curl", version: "7.35.0-1ubuntu2.6"}
+    - {name: "build-essential", version: "11.6ubuntu6"}
+- name: install shell profile for nodenv
+  copy: src=nodenv-profile.sh
+    dest=/etc/profile.d/50-nodenv.sh
+    owner=root group=root mode=0644
+- name: install sudoer for nodenv
+  copy: src=nodenv-sudoers
+    dest="/etc/sudoers.d/50-nodenv"
+    owner=root group=root mode=0644
+- name: ensure sources directory exists
+  file: path=/opt/sources
+    owner=root group=root mode=0755
+    state=directory
+- name: download nodejs source
+  get_url: url=https://nodejs.org/dist/v0.12.7/node-v0.12.7.tar.gz
+    dest=/opt/sources
+    sha256sum=b23d64df051c9c969b0c583f802d5d71de342e53067127a5061415be7e12f39d
+- name: install nodejs
+  script: node_config.sh 0.12.7
+    creates=/opt/nodenv/versions/0.12.7
+  environment:
+    NODE_BUILD_MIRROR_URL: file:///opt/sources/node-v0.12.7.tar.gz#
