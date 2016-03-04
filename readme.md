@@ -1,3 +1,5 @@
+# OpenProjectAnsible
+
 Role for ProjectManagementServer
 Tue Feb 23 13:01:20 CET 2016
 
@@ -46,9 +48,6 @@ Note: Both the node and ruby verions are built from source to ensure platform co
     #end
     projectmanagement.vm.provision "shell", inline: <<-SHELL
       sudo sed "s/nameserver .*/nameserver 172.28.128.5/" -i /etc/resolv.conf
-      sudo sed "s/search .*/search dev.netlight.com/" -i /etc/resolv.conf
-      sudo sed -i '/exit 0/i \ sed "s/nameserver .*/nameserver 172.28.128.5/" -i /etc/resolv.conf' /etc/rc.local
-      sudo sed -i '/exit 0/i \ sed "s/search .*/search dev.netlight.com/" -i /etc/resolv.conf' /etc/rc.local 
     SHELL
   end
 ```
